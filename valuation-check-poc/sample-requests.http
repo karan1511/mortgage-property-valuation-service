@@ -1,0 +1,63 @@
+### Mortgage Valuation API Sample Requests
+
+# Health Check
+GET http://localhost:8080/api/v1/valuation/health
+
+###
+
+# Check if PDF exists for a request ID
+GET http://localhost:8080/api/v1/valuation/exists/rt74321
+
+###
+
+# Process a valuation request
+POST http://localhost:8080/api/v1/valuation/process
+Content-Type: application/json
+
+{
+  "requestId": "rt74321"
+}
+
+###
+
+# Process another valuation request
+POST http://localhost:8080/api/v1/valuation/process
+Content-Type: application/json
+
+{
+  "requestId": "rt12345"
+}
+
+###
+
+# Test with invalid request ID (should return 400)
+POST http://localhost:8080/api/v1/valuation/process
+Content-Type: application/json
+
+{
+  "requestId": ""
+}
+
+###
+
+# Test with invalid JSON (should return 400)
+POST http://localhost:8080/api/v1/valuation/process
+Content-Type: application/json
+
+{
+  "requestId": "rt74321"
+  "invalidField": "test"
+}
+
+###
+
+# Actuator endpoints
+GET http://localhost:8080/actuator/health
+
+###
+
+GET http://localhost:8080/actuator/info
+
+###
+
+GET http://localhost:8080/actuator/metrics
