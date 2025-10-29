@@ -1,0 +1,90 @@
+server:
+  port: 8080
+  servlet:
+    context-path: /api/v1
+
+spring:
+  application:
+    name: mortgage-valuation-app
+  profiles:
+    active: dev
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      show-details: always
+
+# AWS Configuration (Commented out for local development using file system)
+# Uncomment to use AWS S3
+#aws:
+#  s3:
+#    bucket-name: mortgage-valuation-documents
+#    region: eu-west-2
+#    access-key: ${AWS_ACCESS_KEY_ID:}
+#    secret-key: ${AWS_SECRET_ACCESS_KEY:}
+#    endpoint: ${AWS_S3_ENDPOINT:https://s3.eu-west-2.amazonaws.com}
+
+# Azure Configuration
+azure:
+  # Azure OpenAI Configuration
+  openai:
+    endpoint: https://karsi-mghylyf6-eastus2.cognitiveservices.azure.com/
+    api-key: D1FzCOmaXVMZc2i9GjkEENl0eKg9tkm6twjke4nDEUW6hw2YuFSEJQQJ99BJACHYHv6XJ3w3AAAAACOG9X9v
+    deployment-name: gpt-4.1
+    max-tokens: 4000
+    temperature: 0.1
+  # Azure Document Intelligence Configuration
+  document-intelligence:
+    endpoint: https://mortgage-property-valuataion-intel.cognitiveservices.azure.com/
+    api-key: 8SSZeib1upQZqeDsan2Y9bQ5UYLGwkHAEieHNsipNdwwmVK73UCKJQQJ99BJACYeBjFXJ3w3AAALACOGVCRo
+
+# Application Configuration
+app:
+  valuation:
+    pdf-path-template: "lnap4879/{requestId}/report.pdf"
+    timeout-seconds: 300
+    max-file-size-mb: 50
+
+# Logging Configuration
+logging:
+  level:
+    com.mortgage.valuation: DEBUG
+    org.springframework.web: INFO
+    software.amazon.awssdk: INFO
+    com.azure: INFO
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
+    file: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
+  file:
+    name: logs/valuation-app.log
+    max-size: 100MB
+    max-history: 30
+
+---
+# Development Profile
+spring:
+  config:
+    activate:
+      on-profile: dev
+
+aws:
+  s3:
+    endpoint: http://localhost:4566  # LocalStack for development
+
+---
+# Production Profile
+spring:
+  config:
+    activate:
+      on-profile: prod
+
+logging:
+  level:
+    com.mortgage.valuation: INFO
+    org.springframework.web: WARN
+    software.amazon.awssdk: WARN
+    com.azure: WARN
