@@ -7,15 +7,6 @@ spring:
   profiles:
     active: test
 
-# Test AWS Configuration (using LocalStack)
-aws:
-  s3:
-    bucket-name: test-mortgage-valuation-documents
-    region: eu-west-2
-    access-key: test
-    secret-key: test
-    endpoint: http://localhost:4566
-
 # Test Azure OpenAI Configuration (mocked)
 azure:
   openai:
@@ -24,6 +15,10 @@ azure:
     deployment-name: gpt-4o
     max-tokens: 1000
     temperature: 0.1
+  storage:
+    connection-string: ${AZURE_STORAGE_CONNECTION_STRING}
+    container-name: lending-property
+    valuation-reports-path: property-valuation-reports
 
 # Test Application Configuration
 app:

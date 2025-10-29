@@ -76,30 +76,30 @@ public class AzureOpenAIService {
     /**
      * Builds the valuation prompt for the extracted text.
      */
-            private String buildValuationPrompt(String extractedText, String requestId) {
-                    // Build a strict instruction that converts unstructured report text into
-                    // the required form JSON structure used by downstream systems.
-                    // The model MUST return only valid JSON, nothing else.
-                    return String.format("""
-                            You are given extracted text from a single property valuation report. Use the system instructions for mapping and output rules.
-                            
-                            Context:
-                            - requestId: %s
-                            
-                            --- BEGIN EXTRACTED TEXT ---
-                            %s
-                            --- END EXTRACTED TEXT ---
-                            
-                            TASK:
-                            1) Produce the complete JSON envelope exactly as specified in the system prompt.
-                            2) Populate createdUtc and lastUpdatedUtc with the CURRENT UTC timestamp (ISO-8601 with Z).
-                            3) Populate "answers" with entries for every questionId you can confidently extract based on the hardcoded mapping rules in the system prompt.
-                            5) If value for any questionId is not found or is an empty array, then in "answers", set the "value": null.
-                            6) Return ONLY the JSON object; do not include any extra text.
-                            
-                            Remember: do not fabricate values. When in doubt, set value to null.
-                            """, requestId, extractedText);
-            }
+    private String buildValuationPrompt(String extractedText, String requestId) {
+        // Build a strict instruction that converts unstructured report text into
+        // the required form JSON structure used by downstream systems.
+        // The model MUST return only valid JSON, nothing else.
+        return String.format("""
+                You are given extracted text from a single property valuation report. Use the system instructions for mapping and output rules.
+                
+                Context:
+                - requestId: %s
+                
+                --- BEGIN EXTRACTED TEXT ---
+                %s
+                --- END EXTRACTED TEXT ---
+                
+                TASK:
+                1) Produce the complete JSON envelope exactly as specified in the system prompt.
+                2) Populate createdUtc and lastUpdatedUtc with the CURRENT UTC timestamp (ISO-8601 with Z).
+                3) Populate "answers" with entries for every questionId you can confidently extract based on the hardcoded mapping rules in the system prompt.
+                5) If value for any questionId is not found or is an empty array, then in "answers", set the "value": null.
+                6) Return ONLY the JSON object; do not include any extra text.
+                
+                Remember: do not fabricate values. When in doubt, set value to null.
+                """, requestId, extractedText);
+    }
 
     /**
      * Gets the system prompt for the AI model.

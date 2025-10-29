@@ -5,9 +5,10 @@ import com.mortgage.valuation.model.ValuationRequest;
 import com.mortgage.valuation.model.ValuationResponse;
 import com.mortgage.valuation.service.AzureOpenAIService;
 import com.mortgage.valuation.service.PdfTextExtractionService;
-import com.mortgage.valuation.service.S3Service;
+import com.mortgage.valuation.service.AzureStorageService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
+import java.io.IOException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -20,19 +21,20 @@ import org.springframework.web.bind.annotation.*;
  */
 @RestController
 @RequestMapping("/valuation")
+@CrossOrigin(origins = "http://localhost:5173")
 public class ValuationController {
 
     private static final Logger logger = LoggerFactory.getLogger(ValuationController.class);
 
-    private final S3Service s3Service;
+    private final AzureStorageService azureStorageService;
     private final PdfTextExtractionService pdfTextExtractionService;
     private final AzureOpenAIService azureOpenAIService;
 
     @Autowired
-    public ValuationController(S3Service s3Service,
+    public ValuationController(AzureStorageService azureStorageService,
                              PdfTextExtractionService pdfTextExtractionService,
                              AzureOpenAIService azureOpenAIService) {
-        this.s3Service = s3Service;
+        this.azureStorageService = azureStorageService;
         this.pdfTextExtractionService = pdfTextExtractionService;
         this.azureOpenAIService = azureOpenAIService;
     }
@@ -48,12 +50,14 @@ public class ValuationController {
     public ResponseEntity<?> processValuation(@Valid @RequestBody ValuationRequest request, 
                                             HttpServletRequest httpRequest) {
         String requestId = request.getRequestId();
-        logger.info("Processing valuation request: {}", requestId);
+        String loanApplicationId = request.getLoanApplicationId();
+        logger.info("Processing valuation request: {} for loan application: {}", requestId, loanApplicationId);
 
         try {
-            // Step 1: Download PDF from S3
-            logger.info("Step 1: Downloading PDF from S3 for request: {}", requestId);
-            byte[] pdfContent = s3Service.downloadPdf(requestId);
+            // Step 1: Download PDF from Azure Storage
+            logger.info("Step 1: Downloading PDF from Azure Storage for request: {} and loan application: {}", 
+                requestId, loanApplicationId);
+            byte[] pdfContent = azureStorageService.fetchValuationReport(loanApplicationId, requestId);
 
             // Step 2: Validate PDF content
             if (!pdfTextExtractionService.isPdf(pdfContent)) {
@@ -81,8 +85,8 @@ public class ValuationController {
             logger.info("Successfully processed valuation request: {}", requestId);
             return ResponseEntity.ok(valuationResponse);
 
-        } catch (S3Service.S3ServiceException e) {
-            logger.error("S3 error processing request {}: {}", requestId, e.getMessage());
+        } catch (IOException e) {
+            logger.error("Azure Storage error processing request {}: {}", requestId, e.getMessage());
             return createErrorResponse(HttpStatus.NOT_FOUND, "PDF not found", 
                 e.getMessage(), httpRequest.getRequestURI(), requestId);
                 

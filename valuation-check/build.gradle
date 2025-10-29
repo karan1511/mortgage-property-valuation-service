@@ -28,15 +28,15 @@ dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-actuator'
     implementation 'org.springframework.boot:spring-boot-configuration-processor'
     
-    // AWS SDK
-    implementation 'software.amazon.awssdk:s3:2.21.29'
-    implementation 'software.amazon.awssdk:auth:2.21.29'
     
     // Azure Document Intelligence for PDF processing
     implementation 'com.azure:azure-ai-documentintelligence:1.0.0-beta.1'
     
     // Azure OpenAI
     implementation 'com.azure:azure-ai-openai:1.0.0-beta.6'
+    
+    // Azure Storage
+    implementation 'com.azure:azure-storage-blob:12.24.0'
     
     // JSON processing
     implementation 'com.fasterxml.jackson.core:jackson-databind'
