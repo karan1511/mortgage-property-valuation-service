@@ -77,66 +77,28 @@ public class AzureOpenAIService {
      * Builds the valuation prompt for the extracted text.
      */
             private String buildValuationPrompt(String extractedText, String requestId) {
-                    // Provide the model a strict JSON schema matching our ValuationResponse DTO and
-                    // instructions to return only valid JSON compatible with Jackson deserialization.
+                    // Build a strict instruction that converts unstructured report text into
+                    // the required form JSON structure used by downstream systems.
+                    // The model MUST return only valid JSON, nothing else.
                     return String.format("""
-                            Please analyze the following property valuation report and EXTRACT structured information.
-
-                            Requirements (strict):
-                            - Return a single JSON object and NOTHING ELSE (no explanation, no surrounding markdown, no trailing text).
-                            - Follow exactly the JSON structure shown below. Use null for unknown/missing values.
-                            - Use numbers for numeric fields (no quotes). Dates/timestamps must be ISO-8601.
-                            - Monetary values must be plain numbers in GBP (e.g. 350000).
-                            - The "requestId" field MUST be exactly: "%s".
-                            - Ensure the JSON parses with a strict JSON parser (no comments, no extra commas).
-
-                            Schema to produce (MATCHES ValuationResponse DTO):
-                            {
-                                "requestId": "%s",
-                                "propertyAddress": {
-                                    "line1": "...",
-                                    "line2": "...",
-                                    "city": "...",
-                                    "postcode": "...",
-                                    "county": "..."
-                                },
-                                "valuationDetails": {
-                                    "estimatedValue": 350000,
-                                    "valuationRange": { "minValue": 340000, "maxValue": 360000 },
-                                    "valuationMethod": "Comparative",
-                                    "valuationDate": "2025-10-24"
-                                },
-                                "propertyCharacteristics": {
-                                    "propertyType": "Detached",
-                                    "bedrooms": 3,
-                                    "bathrooms": 2,
-                                    "receptionRooms": 1,
-                                    "totalFloorArea": 85.0,
-                                    "plotSize": null,
-                                    "yearBuilt": 1990,
-                                    "condition": "Good"
-                                },
-                                "marketAnalysis": {
-                                    "localMarketTrend": "Stable",
-                                    "averagePricePerSqFt": null,
-                                    "comparableProperties": [
-                                        { "address": "...", "salePrice": 345000, "saleDate": "2025-01-15", "distance": 0.5 }
-                                    ]
-                                },
-                                "riskAssessment": {
-                                    "overallRisk": "Low",
-                                    "riskFactors": ["Flood risk"],
-                                    "riskScore": 10
-                                },
-                                "recommendations": ["Recommendation 1"],
-                                "confidenceScore": 0.87
-                            }
-
-                            Valuation Report Text:
+                            You are given extracted text from a single property valuation report. Use the system instructions for mapping and output rules.
+                            
+                            Context:
+                            - requestId: %s
+                            
+                            --- BEGIN EXTRACTED TEXT ---
                             %s
-
-                            IMPORTANT: Respond with VALID JSON only and match the schema exactly. If a value is unknown, set it to null.
-                            """, requestId, requestId, extractedText);
+                            --- END EXTRACTED TEXT ---
+                            
+                            TASK:
+                            1) Produce the complete JSON envelope exactly as specified in the system prompt.
+                            2) Populate createdUtc and lastUpdatedUtc with the CURRENT UTC timestamp (ISO-8601 with Z).
+                            3) Populate "answers" with entries for every questionId you can confidently extract based on the hardcoded mapping rules in the system prompt.
+                            5) If value for any questionId is not found or is an empty array, then in "answers", set the "value": null.
+                            6) Return ONLY the JSON object; do not include any extra text.
+                            
+                            Remember: do not fabricate values. When in doubt, set value to null.
+                            """, requestId, extractedText);
             }
 
     /**
@@ -144,19 +106,96 @@ public class AzureOpenAIService {
      */
     private String getSystemPrompt() {
         return """
-            You are an expert UK property valuation analyst. Your task is to extract structured information from property valuation reports and present it in a consistent JSON format.
-            
-            Key requirements:
-            - Extract accurate property details including address, characteristics, and valuation information
-            - Identify market trends and comparable properties
-            - Assess risk factors and provide recommendations
-            - Use UK property terminology and standards
-            - Ensure all monetary values are in GBP
-            - Provide a confidence score between 0.0 and 1.0 based on the clarity and completeness of the information
-            - Return only valid JSON, no additional text or formatting
-            
-            If any information is not available or unclear, use null or appropriate default values.
-            """;
+        You are an expert UK property valuation data extraction assistant.
+        Your ONLY job is to convert unstructured valuation report text into one precise JSON object and nothing else.
+
+        REQUIREMENTS:
+        1) OUTPUT ONLY: Return exactly one valid JSON object (no explanations, markdown, or metadata).
+        2) JSON SCHEMA:
+           {
+             "createdUtc": "<ISO-8601 UTC timestamp with Z>",
+             "lastUpdatedUtc": "<ISO-8601 UTC timestamp with Z>",
+             "formCode": "VR4B",
+             "status": "inProgress",
+             "transactionId": "Translated from legacy report",
+             "answers": [
+               {
+                 "questionId": "<string>",
+                 "answerType": "<text|number|decimal|date|options|photos|boolean>",
+                 "value": <string | number | array | null>,
+                 "questionLinkOverridden": false
+               }
+             ],
+             "answersFormVersions": []
+           }
+
+        TOP-LEVEL RULES:
+        - "formCode" must always be "VR4B".
+        - "status" must be "inProgress".
+        - "transactionId" must always be "Translated from legacy report".
+        - "createdUtc" and "lastUpdatedUtc" use CURRENT UTC timestamp (ISO-8601 with Z).
+        - "answersFormVersions" is always an empty array.
+        - All questionLinkOverridden = false.
+        - No missing keys or extra keys inside "answers".
+
+        VALUE RULES:
+        - Use plain numbers (no commas, £, or quotes).
+        - For decimals: include ".0" if integer value.
+        - Dates: use format DD/MM/YYYY.
+        - Options: always arrays of strings (e.g., ["Yes"], ["Purchase"]).
+        - If data missing, set value to null.
+        - RecommendedRetentionAmount: if not found, set 0.0 (default).
+        
+        MAPPING TABLE (hardcoded):
+        - VR4B_LenderReference                               -> text
+        - VR4B_ApplicantNames                                -> text
+        - VR4B_Transaction                                   -> options
+        - VR4B_PurchasePriceEstimatedValuePpEv               -> decimal
+        - VR4B_PropertyAddressHouseFlat                      -> text (extract house/flat number only)
+        - VR4B_RoadNumber                                    -> text (extract first road token after house number)
+        - VR4B_RoadName                                      -> text (remaining road/street name)
+        - VR4B_Area                                          -> text
+        - VR4B_Town                                          -> text
+        - VR4B_County                                        -> text
+        - VR4B_PostCode                                      -> text
+        - VR4B_AddressMatch                                  -> options
+        - VR4B_ActualAddressIfAddressNotAMatch               -> text
+        - VR4B_InspectionDate                                -> date
+        - VR4B_ReportDate                                    -> date
+        - VR4B_CertificationIsThePropertySuitableSecurity    -> options
+        - VR4B_IfPropertyIsNotSuitableSecurityPleaseIdentifyWhy -> options
+        - VR4B_SecurityOther                                 -> text
+        - VR4B_AreAllFlatsMarketableAndMortgageable          -> options
+        - VR4B_IsThePropertyBuiltOfTraditionalConstruction   -> options
+        - VR4B_SpecialistReportsRequired                     -> options
+        - VR4B_AnyApplicableLicensingSchemeInPlace           -> options
+        - VR4B_MarketValue                                   -> decimal (maps from previous VR4B_ValuationMarketValueAggregate)
+        - VR4B_MarketValAfterWorksIssuesResolved             -> decimal
+        - VR4B_MarketRent                                    -> decimal (maps from VR4B_MarketRentAggregate)
+        - VR4B_ReinstatementCost                             -> decimal
+        - VR4B_DoesTheReinstatementCostCarryHighUncertaintyDueToSpecialistBuildingFeaturesListingOrOtherMatters -> options
+        - VR4B_RecommendedRetentionAmount                    -> decimal (default 0.0 if missing)
+        - VR4B_Tenure                                        -> options (maps from VR4B_TitleTenureAndAccessTenure)
+        - VR4B_AnyFlyingCreepingFhEvident                    -> options
+        - VR4B_IfLeaseholdWhatIsTheUnexpiredLeaseTerm        -> number
+        - VR4B_WhatPercentageOfTotalAreaIsFfh                -> number
+        - VR4B_DoesThereAppearToBeSharedAccess               -> options
+        - VR4B_IsAccessFromPublicLand                        -> options
+        - VR4B_IsAccessMadeUp                                -> options
+        - VR4B_SecurityProperyTypeAndStyle                   -> options
+        - VR4B_NumberOfFloorsInTheBuilding                   -> number
+        - VR4B_HowManyFlatsAreInTheEntireBuilding            -> number
+        - VR4B_IsThePropertyServedByALift                    -> options
+        - VR4B_IsThePropertyANewBuild                        -> options
+
+        - Include VR4B_ValuersDeclarationValuerName, VR4B_Qualification, VR4B_RicsNumber, VR4B_FirmName,
+          VR4B_FirmAddressLine1-3, VR4B_TelephoneNo, VR4B_EmailAddressLine1, VR4B_LenderReportPhotographs
+          with null values if not found.
+
+        OUTPUT RULE:
+        - Return ONLY the JSON object (no markdown, no text explanation).
+        - Do not include extra commas, logs, or summaries.
+        """;
     }
 
     /**
@@ -167,10 +206,7 @@ public class AzureOpenAIService {
             // Clean the response content to extract JSON
             String jsonContent = extractJsonFromResponse(responseContent);
             
-            ValuationResponse response = objectMapper.readValue(jsonContent, ValuationResponse.class);
-            response.setRequestId(requestId);
-            
-            return response;
+            return objectMapper.readValue(jsonContent, ValuationResponse.class);
         } catch (JsonProcessingException e) {
             logger.error("Failed to parse AI response as JSON: {}", e.getMessage());
             throw new AzureOpenAIServiceException("Failed to parse AI response: " + e.getMessage(), e);
