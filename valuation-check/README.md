@@ -8,8 +8,8 @@ A Spring Boot application for processing UK property valuation reports using Azu
 
 ```
 ┌─────────────────┐    ┌──────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│   REST API      │───▶│  LocalStack  │───▶│  Azure Doc      │───▶│  Azure OpenAI   │
-│  (Spring Boot)  │    │  (S3 Emulator)│    │  Intelligence   │    │    (GPT-4o)     │
+│   REST API      │───▶│ Azure Storage│───▶│  Azure Doc      │───▶│  Azure OpenAI   │
+│  (Spring Boot)  │    │ Account      │    │  Intelligence   │    │    (GPT-4o)     │
 └─────────────────┘    └──────────────┘    └─────────────────┘    └─────────────────┘
          │                     │                     │                     │
          │                     │                     │                     │
