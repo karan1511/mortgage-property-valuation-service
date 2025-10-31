@@ -21,7 +21,7 @@ import org.springframework.web.bind.annotation.*;
  */
 @RestController
 @RequestMapping("/valuation")
-@CrossOrigin(origins = "http://localhost:5173")
+@CrossOrigin(origins = "*")
 public class ValuationController {
 
     private static final Logger logger = LoggerFactory.getLogger(ValuationController.class);
