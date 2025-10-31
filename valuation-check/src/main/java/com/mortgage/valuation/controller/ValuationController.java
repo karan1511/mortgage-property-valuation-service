@@ -83,6 +83,8 @@ public class ValuationController {
             ValuationResponse valuationResponse = azureOpenAIService.processValuationText(extractedText, requestId);
 
             logger.info("Successfully processed valuation request: {}", requestId);
+
+            // update salesforce object
             return ResponseEntity.ok(valuationResponse);
 
         } catch (IOException e) {
