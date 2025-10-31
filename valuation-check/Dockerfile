@@ -1,51 +1,34 @@
-# Multi-stage build for Spring Boot application
-FROM gradle:8.5-jdk17 AS builder
-
-# Set working directory
+FROM gradle:8.4-jdk17 AS builder
 WORKDIR /app
 
-# Copy gradle files
-COPY build.gradle settings.gradle gradlew ./
-COPY gradle/ gradle/
+# Copy wrapper + configs
+COPY gradlew /app/
+COPY gradle /app/gradle
+COPY build.gradle settings.gradle /app/
+
+# Give execution permission (especially on Linux)
+RUN chmod +x gradlew
+
+# Download dependencies
+RUN ./gradlew dependencies --no-daemon
 
 # Copy source code
-COPY src/ src/
+COPY . /app
 
-# Build the application
-RUN ./gradlew build -x test
+# Build the JAR
+RUN ./gradlew bootJar --no-daemon
 
-# Runtime stage
-FROM openjdk:17-jre-slim
-
-# Install necessary packages
-RUN apt-get update && \
-    apt-get install -y curl && \
-    rm -rf /var/lib/apt/lists/*
-
-# Create app user
-RUN groupadd -r appuser && useradd -r -g appuser appuser
+# Stage 2: Create minimal runtime image
+FROM openjdk:17-jdk-slim
 
 # Set working directory
 WORKDIR /app
 
-# Copy the built JAR from builder stage
+# Copy JAR file from build stage
 COPY --from=builder /app/build/libs/*.jar app.jar
 
-# Create logs directory
-RUN mkdir -p /app/logs && chown -R appuser:appuser /app
-
-# Switch to non-root user
-USER appuser
-
-# Expose port
+# Expose the port your Spring Boot app uses (default is 8080)
 EXPOSE 8080
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
-    CMD curl -f http://localhost:8080/api/v1/valuation/health || exit 1
-
-# JVM options
-ENV JAVA_OPTS="-Xms512m -Xmx1024m -XX:+UseG1GC -XX:+UseContainerSupport"
-
 # Run the application
-ENTRYPOINT ["sh", "-c", "java $JAVA_OPTS -jar app.jar"]
+ENTRYPOINT ["java","-jar","app.jar"]
