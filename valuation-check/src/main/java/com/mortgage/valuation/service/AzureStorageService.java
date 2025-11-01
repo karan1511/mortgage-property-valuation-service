@@ -11,9 +11,11 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
 
 /**
  * Service for interacting with Azure Blob Storage to fetch valuation report PDFs.
@@ -29,19 +31,53 @@ public class AzureStorageService {
     @Autowired
     public AzureStorageService(AzureStorageConfig config) {
         this.config = config;
-        
+
         BlobServiceClient blobServiceClient = new BlobServiceClientBuilder()
-            .connectionString(config.getConnectionString())
-            .buildClient();
-            
+                .connectionString(config.getConnectionString())
+                .buildClient();
+
         this.containerClient = blobServiceClient.getBlobContainerClient(config.getContainerName());
     }
+
+    /**
+     * Uploads a multipart file to Azure Data Lake Storage / Blob Storage.
+     *
+     * @param loanApplicationId The loan application ID
+     * @param requestId         The request ID
+     * @param file              The multipart file from the request
+     * @return The full blob URL after upload
+     * @throws IOException if the upload fails
+     */
+    public String uploadFile(String loanApplicationId, String requestId, MultipartFile file) throws IOException {
+        String blobPath = config.buildBlobPath(loanApplicationId, requestId);
+        String fileName = file.getOriginalFilename();
+        String fullBlobPath = blobPath.endsWith("/") ? blobPath + fileName : blobPath + "/" + fileName;
+
+        logger.info("Uploading file '{}' to Azure Storage path: {}", fileName, fullBlobPath);
+
+        try {
+            BlobClient blobClient = containerClient.getBlobClient(fullBlobPath);
+
+            try (InputStream inputStream = file.getInputStream()) {
+                blobClient.upload(inputStream, file.getSize(), true); // true = overwrite existing
+            }
+
+            String blobUrl = blobClient.getBlobUrl();
+            logger.info("File '{}' uploaded successfully to: {}", fileName, blobUrl);
+            return blobUrl;
+
+        } catch (Exception e) {
+            logger.error("Error uploading file to Azure Storage: {}", e.getMessage(), e);
+            throw new IOException("Failed to upload file: " + e.getMessage(), e);
+        }
+    }
+
 
     /**
      * Fetches a valuation report PDF from Azure Storage.
      *
      * @param loanApplicationId The loan application ID
-     * @param requestId The request ID
+     * @param requestId         The request ID
      * @return The PDF content as a byte array
      * @throws IOException if there's an error reading the blob
      */

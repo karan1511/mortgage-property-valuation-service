@@ -1,11 +1,14 @@
 package com.mortgage.valuation.controller;
 
 import com.mortgage.valuation.model.ErrorResponse;
+import com.mortgage.valuation.model.FileUploadRequest;
+import com.mortgage.valuation.model.FileUploadResponse;
 import com.mortgage.valuation.model.ValuationRequest;
 import com.mortgage.valuation.model.ValuationResponse;
 import com.mortgage.valuation.service.AzureOpenAIService;
 import com.mortgage.valuation.service.PdfTextExtractionService;
 import com.mortgage.valuation.service.AzureStorageService;
+import com.mortgage.valuation.service.ValuationService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import java.io.IOException;
@@ -13,8 +16,10 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
 /**
  * REST controller for property valuation processing.
@@ -29,25 +34,28 @@ public class ValuationController {
     private final AzureStorageService azureStorageService;
     private final PdfTextExtractionService pdfTextExtractionService;
     private final AzureOpenAIService azureOpenAIService;
+    private final ValuationService valuationService;
 
     @Autowired
     public ValuationController(AzureStorageService azureStorageService,
                              PdfTextExtractionService pdfTextExtractionService,
-                             AzureOpenAIService azureOpenAIService) {
+                             AzureOpenAIService azureOpenAIService,
+                               ValuationService valuationService) {
         this.azureStorageService = azureStorageService;
         this.pdfTextExtractionService = pdfTextExtractionService;
         this.azureOpenAIService = azureOpenAIService;
+        this.valuationService = valuationService;
     }
 
     /**
      * Processes a property valuation request.
-     * 
+     *
      * @param request The valuation request containing requestId
      * @param httpRequest The HTTP request for error context
      * @return Structured valuation response
      */
     @PostMapping("/process")
-    public ResponseEntity<?> processValuation(@Valid @RequestBody ValuationRequest request, 
+    public ResponseEntity<?> processValuation(@Valid @RequestBody ValuationRequest request,
                                             HttpServletRequest httpRequest) {
         String requestId = request.getRequestId();
         String loanApplicationId = request.getLoanApplicationId();
@@ -55,7 +63,7 @@ public class ValuationController {
 
         try {
             // Step 1: Download PDF from Azure Storage
-            logger.info("Step 1: Downloading PDF from Azure Storage for request: {} and loan application: {}", 
+            logger.info("Step 1: Downloading PDF from Azure Storage for request: {} and loan application: {}",
                 requestId, loanApplicationId);
             byte[] pdfContent = azureStorageService.fetchValuationReport(loanApplicationId, requestId);
 
@@ -89,30 +97,70 @@ public class ValuationController {
 
         } catch (IOException e) {
             logger.error("Azure Storage error processing request {}: {}", requestId, e.getMessage());
-            return createErrorResponse(HttpStatus.NOT_FOUND, "PDF not found", 
-                e.getMessage(), httpRequest.getRequestURI(), requestId);
-                
+            return createErrorResponse(HttpStatus.NOT_FOUND, "PDF not found",
+                    e.getMessage(), httpRequest.getRequestURI(), requestId);
+
         } catch (PdfTextExtractionService.PdfTextExtractionException e) {
             logger.error("PDF extraction error processing request {}: {}", requestId, e.getMessage());
-            return createErrorResponse(HttpStatus.BAD_REQUEST, "PDF processing failed", 
-                e.getMessage(), httpRequest.getRequestURI(), requestId);
-                
+            return createErrorResponse(HttpStatus.BAD_REQUEST, "PDF processing failed",
+                    e.getMessage(), httpRequest.getRequestURI(), requestId);
+
         } catch (AzureOpenAIService.AzureOpenAIServiceException e) {
             logger.error("Azure OpenAI error processing request {}: {}", requestId, e.getMessage());
-            return createErrorResponse(HttpStatus.INTERNAL_SERVER_ERROR, "AI processing failed", 
-                e.getMessage(), httpRequest.getRequestURI(), requestId);
-                
+            return createErrorResponse(HttpStatus.INTERNAL_SERVER_ERROR, "AI processing failed",
+                    e.getMessage(), httpRequest.getRequestURI(), requestId);
+
         } catch (Exception e) {
             logger.error("Unexpected error processing request {}: {}", requestId, e.getMessage(), e);
-            return createErrorResponse(HttpStatus.INTERNAL_SERVER_ERROR, "Internal server error", 
-                "An unexpected error occurred while processing the request", 
+            return createErrorResponse(HttpStatus.INTERNAL_SERVER_ERROR, "Internal server error",
+                    "An unexpected error occurred while processing the request",
+                    httpRequest.getRequestURI(), requestId);
+        }
+    }
+
+
+    @PostMapping(value = "/upload", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<?> uploadFile(@RequestPart("file") MultipartFile file,
+                                        @Valid @RequestPart(name = "file_upload_request")
+                                        FileUploadRequest request, HttpServletRequest httpRequest) {
+
+        var requestId = request.getLoanApplicationId();
+        try {
+            var cvId = valuationService.createRecord(request);
+            var url = valuationService.uploadFile(file, request);
+            valuationService.processFileAndUpdateCRM(file, cvId, request); // runs asynchronously
+
+            FileUploadResponse response = new FileUploadResponse();
+            response.setId(cvId);
+            response.setUrl(url);
+            return ResponseEntity.ok(response);
+
+        } catch (IOException e) {
+            logger.error("Azure Storage error processing request {}: {}", requestId, e.getMessage());
+            return createErrorResponse(HttpStatus.NOT_FOUND, "PDF not found",
+                e.getMessage(), httpRequest.getRequestURI(), requestId);
+
+        } catch (PdfTextExtractionService.PdfTextExtractionException e) {
+            logger.error("PDF extraction error processing request {}: {}", requestId, e.getMessage());
+            return createErrorResponse(HttpStatus.BAD_REQUEST, "PDF processing failed",
+                e.getMessage(), httpRequest.getRequestURI(), requestId);
+
+        } catch (AzureOpenAIService.AzureOpenAIServiceException e) {
+            logger.error("Azure OpenAI error processing request {}: {}", requestId, e.getMessage());
+            return createErrorResponse(HttpStatus.INTERNAL_SERVER_ERROR, "AI processing failed",
+                e.getMessage(), httpRequest.getRequestURI(), requestId);
+
+        } catch (Exception e) {
+            logger.error("Unexpected error processing request {}: {}", requestId, e.getMessage(), e);
+            return createErrorResponse(HttpStatus.INTERNAL_SERVER_ERROR, "Internal server error",
+                "An unexpected error occurred while processing the request",
                 httpRequest.getRequestURI(), requestId);
         }
     }
 
     /**
      * Checks if a PDF exists for the given request ID.
-     * 
+     *
      * @param requestId The request ID to check
      * @return Existence status
      */
@@ -138,7 +186,6 @@ public class ValuationController {
 //                });
 //        }
 //    }
-
     private ResponseEntity<ErrorResponse> createErrorResponse(HttpStatus status, String error,
                                                               String message, String path, String requestId) {
         ErrorResponse errorResponse = new ErrorResponse(status.value(), error, message, path, requestId);
